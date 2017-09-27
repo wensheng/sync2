@@ -57,8 +57,8 @@ class WorkerThread(threading.Thread):
         self._want_abort = 0
         # This starts the thread running on creation, but you could
         # also make the GUI thread responsible for calling this
-        self.firstFiles = {}
-        self.secondFiles = {}
+        self.new2dirs = []
+        self.new1dirs = []
         self.same_name_diff_stats = []
         self.start()
 
@@ -75,14 +75,16 @@ class WorkerThread(threading.Thread):
         # 1st -> 2nd
         for root, dirs, files in os.walk(self._notify_window.firstFolder):
             for d in dirs:
-                src_dir = os.path.join(root[first_len + 1:], d)
-                target_dir = os.path.join(self._notify_window.secondFolder, src_dir)
+                src_dir = os.path.join(root, d)
+                dir_name = src_dir[first_len + 1:]
+                target_dir = os.path.join(self._notify_window.secondFolder, dir_name)
                 if not os.path.isdir(target_dir):
                     try:
                         os.makedirs(target_dir, exist_ok=True)
+                        self.new2dirs.append((src_dir, target_dir))
                     except (PermissionError, FileNotFoundError):
                         self.logFile.write("Error creating %s in %s\n" % (
-                                           src_dir, self._notify_window.secondFolder))
+                                           dir_name, self._notify_window.secondFolder))
                         if STOP_ON_ERROR:
                             wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
@@ -142,17 +144,23 @@ class WorkerThread(threading.Thread):
                                               'n': number_of_files,
                                               'f': os.path.join(root, f)}))
 
+        # newly create dir has same metadata(ie. last modified) as original
+        for pair in self.new2dirs:
+            shutil.copystat(pair[0], pair[1])
+
         # 2nd -> 1st
         for root, dirs, files in os.walk(self._notify_window.secondFolder):
             for d in dirs:
-                src_dir = os.path.join(root[second_len + 1:], d)
-                target_dir = os.path.join(self._notify_window.firstFolder, src_dir)
+                src_dir = os.path.join(root, d)
+                dir_name = src_dir[second_len + 1:]
+                target_dir = os.path.join(self._notify_window.firstFolder, dir_name)
                 if not os.path.isdir(target_dir):
                     try:
                         os.makedirs(target_dir, exist_ok=True)
+                        self.new1dirs.append((src_dir, target_dir))
                     except (PermissionError, FileNotFoundError):
                         self.logFile.write("Error creating %s in %s\n" % (
-                                           src_dir, self._notify_window.secondFolder))
+                                           dir_name, self._notify_window.secondFolder))
                         if STOP_ON_ERROR:
                             wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
@@ -204,6 +212,9 @@ class WorkerThread(threading.Thread):
 
             number_of_files += 1
 
+        for pair in self.new1dirs:
+            shutil.copystat(pair[0], pair[1])
+
         self.logFile.close()
         wx.PostEvent(self._notify_window, ResultEvent({'n': number_of_files, 's': 3}))
 
@@ -245,7 +256,7 @@ class MyFrame(wx.Frame):
         self.txt3 = wx.TextCtrl(panel,
                                 size=(515, 50),
                                 pos=(10, 200),
-                                style=wx.TE_READONLY | wx.TE_MULTILINE| wx.TE_WORDWRAP | wx.BORDER_NONE)
+                                style=wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_MULTILINE | wx.BORDER_NONE)
         self.txt3.SetValue("")
 
         # Set up event handler for any worker thread results
@@ -262,7 +273,7 @@ class MyFrame(wx.Frame):
             self.worker = None
             self.doButton.SetLabel("SYNC!")
         elif event.data['s'] == 2:
-            self.txt3.SetValue('copying %s, \n%d files copied.' %
+            self.txt3.SetValue('copying %s\n%d files copied.' %
                                (event.data['f'], event.data['n']))
         elif event.data['s'] == 3:
             self.txt3.SetValue("Done! %d files were copied. The 2 folders are sync'ed" %
