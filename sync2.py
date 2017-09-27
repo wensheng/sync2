@@ -81,9 +81,10 @@ class WorkerThread(threading.Thread):
                     try:
                         os.makedirs(target_dir, exist_ok=True)
                     except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error creating %s in %s\n" % (src_dir, self._notify_window.secondFolder))
+                        self.logFile.write("Error creating %s in %s\n" % (
+                                           src_dir, self._notify_window.secondFolder))
                         if STOP_ON_ERROR:
-                            wx.PostEvent(self._notify_window, ResultEvent({'s':0}))
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
 
             for f in files:
@@ -95,6 +96,15 @@ class WorkerThread(threading.Thread):
                         # files are different
                         self.same_name_diff_stats.append(os.path.join(file_dir, f))
                         try:
+                            fsize = os.path.getsize(src_file)
+                        except OSError:
+                            continue
+                        if fsize > 100000000:
+                            # for size > 100MB, report it's being copied
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
+                                                                           'n': number_of_files,
+                                                                           'f': src_file}))
+                        try:
                             # save filename in folder 1 as filename.1 in folder 2
                             shutil.copy2(src_file, "%s.1" % dest_file)
                             self.logFile.write("conflict: %s and %s\n" % (src_file, dest_file))
@@ -102,16 +112,25 @@ class WorkerThread(threading.Thread):
                         except (PermissionError, FileNotFoundError):
                             self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
                             if STOP_ON_ERROR:
-                                wx.PostEvent(self._notify_window, ResultEvent({'s':0}))
+                                wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                                 return
                 else:
+                    try:
+                        fsize = os.path.getsize(src_file)
+                    except OSError:
+                        continue
+                    if fsize > 100000000:
+                        # for size > 100MB, report it's being copied
+                        wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
+                                                                       'n': number_of_files,
+                                                                       'f': src_file}))
                     try:
                         shutil.copy2(src_file, dest_file)
                         number_of_files += 1
                     except (PermissionError, FileNotFoundError):
                         self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
                         if STOP_ON_ERROR:
-                            wx.PostEvent(self._notify_window, ResultEvent({'s':0}))
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
 
                 if number_of_files % 10 == 0:
@@ -132,7 +151,8 @@ class WorkerThread(threading.Thread):
                     try:
                         os.makedirs(target_dir, exist_ok=True)
                     except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error creating %s in %s\n" % (src_dir, self._notify_window.secondFolder))
+                        self.logFile.write("Error creating %s in %s\n" % (
+                                           src_dir, self._notify_window.secondFolder))
                         if STOP_ON_ERROR:
                             wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
@@ -144,11 +164,20 @@ class WorkerThread(threading.Thread):
                 dest_file = os.path.join(self._notify_window.firstFolder, file_dir, f)
                 if not os.path.isfile(dest_file):
                     try:
+                        fsize = os.path.getsize(src_file)
+                    except OSError:
+                        continue
+                    if fsize > 100000000:
+                        # for size > 100MB, report it's being copied
+                        wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
+                                                                       'n': number_of_files,
+                                                                       'f': src_file}))
+                    try:
                         shutil.copy2(src_file, dest_file)
                         number_of_files += 1
                     except (PermissionError, FileNotFoundError):
                         self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
-                        wx.PostEvent(self._notify_window, ResultEvent({'s':0}))
+                        wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                         return
 
                 if number_of_files % 10 == 0:
@@ -160,7 +189,7 @@ class WorkerThread(threading.Thread):
                                               'n': number_of_files,
                                               'f': os.path.join(root, f)}))
 
-        for f in self.same_name_diff_stats:            
+        for f in self.same_name_diff_stats:
             src_file = os.path.join(self._notify_window.secondFolder, f)
             dest_file = os.path.join(self._notify_window.firstFolder, f)
             try:
@@ -205,18 +234,18 @@ class MyFrame(wx.Frame):
 
         self.firstButton = wx.Button(panel, 1, 'Folder 1', size=(85, 28), pos=(5, 80))
         self.Bind(wx.EVT_BUTTON, self.OnFirst, id=1)
-        self.txt1 = wx.TextCtrl(panel, size=(440, 30), pos=(95, 80), style=wx.TE_READONLY)
+        self.txt1 = wx.TextCtrl(panel, size=(430, 30), pos=(95, 80), style=wx.TE_READONLY)
 
         self.secondButton = wx.Button(panel, 2, 'Folder 2', size=(85, 28), pos=(5, 120))
         self.Bind(wx.EVT_BUTTON, self.OnSecond, id=2)
-        self.txt2 = wx.TextCtrl(panel, size=(440, 30), pos=(95, 120), style=wx.TE_READONLY)
+        self.txt2 = wx.TextCtrl(panel, size=(430, 30), pos=(95, 120), style=wx.TE_READONLY)
 
         self.doButton = wx.Button(panel, 3, 'SYNC!', (230, 170))
         self.Bind(wx.EVT_BUTTON, self.DoIt, id=3)
         self.txt3 = wx.TextCtrl(panel,
-                                size=(525, 50),
-                                pos=(10, 210),
-                                style=wx.TE_READONLY | wx.TE_WORDWRAP | wx.BORDER_NONE)
+                                size=(515, 50),
+                                pos=(10, 200),
+                                style=wx.TE_READONLY | wx.TE_MULTILINE| wx.TE_WORDWRAP | wx.BORDER_NONE)
         self.txt3.SetValue("")
 
         # Set up event handler for any worker thread results
@@ -231,14 +260,16 @@ class MyFrame(wx.Frame):
         if event.data['s'] == 1:
             self.txt3.SetValue('Deleting task canceled.')
             self.worker = None
+            self.doButton.SetLabel("SYNC!")
         elif event.data['s'] == 2:
-            self.txt3.SetValue('copying %s, (%d files copied)' %
+            self.txt3.SetValue('copying %s, \n%d files copied.' %
                                (event.data['f'], event.data['n']))
         elif event.data['s'] == 3:
-            self.txt3.SetValue("Done! %d files were copied. The 2 folders are sync'ed" % event.data['n'])
+            self.txt3.SetValue("Done! %d files were copied. The 2 folders are sync'ed" %
+                               event.data['n'])
             self.worker = None
             self.doButton.SetLabel("SYNC!")
-            # self.doButton.Disable()
+            self.doButton.Disable()
         else:
             # Process results here
             self.txt3.SetValue('Error! Aborted.')
@@ -254,17 +285,21 @@ class MyFrame(wx.Frame):
                            defaultPath=wx.GetHomeDir(),
                            style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST)
         if dlg.ShowModal() == wx.ID_OK:
-            self.firstFolder = dlg.GetPath()
+            firstFolder = dlg.GetPath()
+            if self.firstFolder != firstFolder:
+                self.firstFolder = firstFolder
+                self.ResetDoButton()
             self.txt1.SetValue(self.firstFolder)
-            self.ResetDoButton()
         dlg.Destroy()
 
     def OnSecond(self, event):
-        dlg = wx.DirDialog(self, "Select 2nd folder")
+        dlg = wx.DirDialog(self, "Select 2nd folder", style=wx.DD_DIR_MUST_EXIST)
         if dlg.ShowModal() == wx.ID_OK:
-            self.secondFolder = dlg.GetPath()
+            secondFolder = dlg.GetPath()
+            if self.secondFolder != secondFolder:
+                self.secondFolder = secondFolder
+                self.ResetDoButton()
             self.txt2.SetValue(self.secondFolder)
-            self.ResetDoButton()
         dlg.Destroy()
 
     def DoIt(self, event):
