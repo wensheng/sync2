@@ -226,7 +226,7 @@ class WorkerThread(threading.Thread):
 
 class MyFrame(wx.Frame):
     def __init__(self, parent, id, title):
-        wx.Frame.__init__(self, parent, id, title, size=(550, 300),
+        wx.Frame.__init__(self, parent, id, title, size=(550, 370),
                           style=wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER)
         self.worker = None
         self.firstFolder = ""
@@ -268,7 +268,7 @@ class MyFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.DoIt, id=3)
         self.txt3 = wx.TextCtrl(panel,
                                 size=(515, 50),
-                                pos=(10, 240),
+                                pos=(10, 270),
                                 style=wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_MULTILINE | wx.BORDER_NONE)
         self.txt3.SetValue("")
 
