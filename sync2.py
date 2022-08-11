@@ -14,11 +14,9 @@ import wx
 
 STOP_ON_ERROR = False  # we don't stop on error
 # Button definitions
-ID_START = wx.NewId()
-ID_STOP = wx.NewId()
 
 # Define notification event for thread completion
-EVT_RESULT_ID = wx.NewId()
+EVT_RESULT_ID = wx.NewIdRef(count=1)
 
 
 def resource_path(relative_path):
@@ -231,6 +229,7 @@ class MyFrame(wx.Frame):
         self.worker = None
         self.firstFolder = ""
         self.secondFolder = ""
+        self.curDirection = 0  # down
 
         self.deleted = 0  # 0:ready 1:in progress 2:done
         self.SetBackgroundColour('white')
@@ -243,19 +242,31 @@ class MyFrame(wx.Frame):
         title = wx.StaticText(panel, -1, "sync2", pos=(230, 20))
         title.SetFont(wx.Font(24, wx.DECORATIVE, wx.ITALIC, wx.BOLD))
 
-        self.firstButton = wx.Button(panel, 1, 'Folder 1', size=(85, 28), pos=(5, 80))
+        self.firstButton = wx.Button(panel, id=1, label='Folder A', size=(85, 28), pos=(5, 80))
         self.Bind(wx.EVT_BUTTON, self.OnFirst, id=1)
         self.txt1 = wx.TextCtrl(panel, size=(430, 30), pos=(95, 80), style=wx.TE_READONLY)
 
-        self.secondButton = wx.Button(panel, 2, 'Folder 2', size=(85, 28), pos=(5, 120))
-        self.Bind(wx.EVT_BUTTON, self.OnSecond, id=2)
-        self.txt2 = wx.TextCtrl(panel, size=(430, 30), pos=(95, 120), style=wx.TE_READONLY)
+        self.upArrowSVG = wx.Bitmap('arrow-up.png')
+        wx.Bitmap.Rescale(self.upArrowSVG, (32,32))
+        self.downArrowSVG = wx.Bitmap('arrow-down.png')
+        wx.Bitmap.Rescale(self.downArrowSVG, (32, 32))
+        self.upDownArrowSVG = wx.Bitmap('arrows-up-down.png')
+        wx.Bitmap.Rescale(self.upDownArrowSVG, (32, 32))
+        wx.StaticText(panel, -1, "Click to change ->", pos=(70, 130))
+        self.dirButton = wx.Button(panel, id=5, label='', pos=(200, 120), size=(33, 33), name='direction')
+        self.dirButton.SetBitmap(self.downArrowSVG)
+        self.dirText = wx.StaticText(panel, -1, "Folder A will be sync'ed to folder B", pos=(260, 130))
+        self.Bind(wx.EVT_BUTTON, self.onDirButton, id=5)
 
-        self.doButton = wx.Button(panel, 3, 'SYNC!', (230, 170))
+        self.secondButton = wx.Button(panel, id=2, label='Folder B', size=(85, 28), pos=(5, 160))
+        self.Bind(wx.EVT_BUTTON, self.OnSecond, id=2)
+        self.txt2 = wx.TextCtrl(panel, size=(430, 30), pos=(95, 160), style=wx.TE_READONLY)
+
+        self.doButton = wx.Button(panel, 3, 'SYNC!', (230, 210))
         self.Bind(wx.EVT_BUTTON, self.DoIt, id=3)
         self.txt3 = wx.TextCtrl(panel,
                                 size=(515, 50),
-                                pos=(10, 200),
+                                pos=(10, 240),
                                 style=wx.TE_READONLY | wx.TE_WORDWRAP | wx.TE_MULTILINE | wx.BORDER_NONE)
         self.txt3.SetValue("")
 
@@ -312,6 +323,20 @@ class MyFrame(wx.Frame):
                 self.ResetDoButton()
             self.txt2.SetValue(self.secondFolder)
         dlg.Destroy()
+
+    def onDirButton(self, event):
+        if self.curDirection == 0:
+            self.curDirection = 1
+            self.dirButton.SetBitmap(self.upArrowSVG)
+            self.dirText.SetLabel("Folder B will be sync'ed to folder A")
+        elif self.curDirection == 1:
+            self.curDirection = 2
+            self.dirButton.SetBitmap(self.upDownArrowSVG)
+            self.dirText.SetLabel("Folder A and B will be sync'ed")
+        else:
+            self.curDirection = 0
+            self.dirButton.SetBitmap(self.downArrowSVG)
+            self.dirText.SetLabel("Folder A will be sync'ed to folder B")
 
     def DoIt(self, event):
         if self.deleted == 0:
