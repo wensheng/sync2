@@ -58,6 +58,7 @@ class WorkerThread(threading.Thread):
         self.new2dirs = []
         self.new1dirs = []
         self.same_name_diff_stats = []
+        self.logFile = open("log.txt", 'w')
         self.start()
 
     def run(self):
@@ -66,35 +67,55 @@ class WorkerThread(threading.Thread):
         # a long process (well, 10s here) as a simple loop - you will
         # need to structure your processing so that you periodically
         # peek at the abort variable
-        self.logFile = open("log.txt", 'w')
         number_of_files = 0
         first_len = len(self._notify_window.firstFolder)
         second_len = len(self._notify_window.secondFolder)
-        # 1st -> 2nd
-        for root, dirs, files in os.walk(self._notify_window.firstFolder):
-            for d in dirs:
-                src_dir = os.path.join(root, d)
-                dir_name = src_dir[first_len + 1:]
-                target_dir = os.path.join(self._notify_window.secondFolder, dir_name)
-                if not os.path.isdir(target_dir):
-                    try:
-                        os.makedirs(target_dir, exist_ok=True)
-                        self.new2dirs.append((src_dir, target_dir))
-                    except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error creating %s in %s\n" % (
-                                           dir_name, self._notify_window.secondFolder))
-                        if STOP_ON_ERROR:
-                            wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
-                            return
+        if self._notify_window.curDirection in (0, 2):
+            # A -> B
+            for root, dirs, files in os.walk(self._notify_window.firstFolder):
+                for d in dirs:
+                    src_dir = os.path.join(root, d)
+                    dir_name = src_dir[first_len + 1:]
+                    target_dir = os.path.join(self._notify_window.secondFolder, dir_name)
+                    if not os.path.isdir(target_dir):
+                        try:
+                            os.makedirs(target_dir, exist_ok=True)
+                            self.new2dirs.append((src_dir, target_dir))
+                        except (PermissionError, FileNotFoundError):
+                            self.logFile.write("Error creating %s in %s\n" % (
+                                               dir_name, self._notify_window.secondFolder))
+                            if STOP_ON_ERROR:
+                                wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
+                                return
 
-            for f in files:
-                file_dir = root[first_len + 1:]
-                src_file = os.path.join(root, f)
-                dest_file = os.path.join(self._notify_window.secondFolder, file_dir, f)
-                if os.path.isfile(dest_file):
-                    if not filecmp.cmp(src_file, dest_file):
-                        # files are different
-                        self.same_name_diff_stats.append(os.path.join(file_dir, f))
+                for f in files:
+                    file_dir = root[first_len + 1:]
+                    src_file = os.path.join(root, f)
+                    dest_file = os.path.join(self._notify_window.secondFolder, file_dir, f)
+                    if os.path.isfile(dest_file):
+                        if not filecmp.cmp(src_file, dest_file):
+                            # files are different
+                            self.same_name_diff_stats.append(os.path.join(file_dir, f))
+                            try:
+                                fsize = os.path.getsize(src_file)
+                            except OSError:
+                                continue
+                            if fsize > 100000000:
+                                # for size > 100MB, report it's being copied
+                                wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
+                                                                               'n': number_of_files,
+                                                                               'f': src_file}))
+                            try:
+                                # save filename in folder 1 as filename.1 in folder 2
+                                shutil.copy2(src_file, "%s.1" % dest_file)
+                                self.logFile.write("conflict: %s and %s\n" % (src_file, dest_file))
+                                number_of_files += 1
+                            except (PermissionError, FileNotFoundError):
+                                self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
+                                if STOP_ON_ERROR:
+                                    wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
+                                    return
+                    else:
                         try:
                             fsize = os.path.getsize(src_file)
                         except OSError:
@@ -105,113 +126,94 @@ class WorkerThread(threading.Thread):
                                                                            'n': number_of_files,
                                                                            'f': src_file}))
                         try:
-                            # save filename in folder 1 as filename.1 in folder 2
-                            shutil.copy2(src_file, "%s.1" % dest_file)
-                            self.logFile.write("conflict: %s and %s\n" % (src_file, dest_file))
+                            shutil.copy2(src_file, dest_file)
                             number_of_files += 1
                         except (PermissionError, FileNotFoundError):
                             self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
                             if STOP_ON_ERROR:
                                 wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                                 return
-                else:
-                    try:
-                        fsize = os.path.getsize(src_file)
-                    except OSError:
-                        continue
-                    if fsize > 100000000:
-                        # for size > 100MB, report it's being copied
-                        wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
-                                                                       'n': number_of_files,
-                                                                       'f': src_file}))
-                    try:
-                        shutil.copy2(src_file, dest_file)
-                        number_of_files += 1
-                    except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
-                        if STOP_ON_ERROR:
+
+                    if number_of_files % 10 == 0:
+                        if self._want_abort:
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 1}))
+                            return
+                        wx.PostEvent(self._notify_window,
+                                     ResultEvent({'s': 2,
+                                                  'n': number_of_files,
+                                                  'f': os.path.join(root, f)}))
+
+            # newly create dir has same metadata(ie. last modified) as original
+            for pair in self.new2dirs:
+                shutil.copystat(pair[0], pair[1])
+
+        if self._notify_window.curDirection in (1, 2):
+            # B -> A
+            for root, dirs, files in os.walk(self._notify_window.secondFolder):
+                for d in dirs:
+                    src_dir = os.path.join(root, d)
+                    dir_name = src_dir[second_len + 1:]
+                    target_dir = os.path.join(self._notify_window.firstFolder, dir_name)
+                    if not os.path.isdir(target_dir):
+                        try:
+                            os.makedirs(target_dir, exist_ok=True)
+                            self.new1dirs.append((src_dir, target_dir))
+                        except (PermissionError, FileNotFoundError):
+                            self.logFile.write("Error creating %s in %s\n" % (
+                                               dir_name, self._notify_window.secondFolder))
+                            if STOP_ON_ERROR:
+                                wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
+                                return
+
+                for f in files:
+                    file_dir = root[second_len + 1:]
+                    src_file = os.path.join(root, f)
+                    # skip those copied from 1st to 2nd and those already compared
+                    dest_file = os.path.join(self._notify_window.firstFolder, file_dir, f)
+                    if not os.path.isfile(dest_file):
+                        try:
+                            fsize = os.path.getsize(src_file)
+                        except OSError:
+                            continue
+                        if fsize > 100000000:
+                            # for size > 100MB, report it's being copied
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
+                                                                           'n': number_of_files,
+                                                                           'f': src_file}))
+                        try:
+                            shutil.copy2(src_file, dest_file)
+                            number_of_files += 1
+                        except (PermissionError, FileNotFoundError):
+                            self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
                             wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                             return
 
-                if number_of_files % 10 == 0:
-                    if self._want_abort:
-                        wx.PostEvent(self._notify_window, ResultEvent({'s': 1}))
-                        return
-                    wx.PostEvent(self._notify_window,
-                                 ResultEvent({'s': 2,
-                                              'n': number_of_files,
-                                              'f': os.path.join(root, f)}))
-
-        # newly create dir has same metadata(ie. last modified) as original
-        for pair in self.new2dirs:
-            shutil.copystat(pair[0], pair[1])
-
-        # 2nd -> 1st
-        for root, dirs, files in os.walk(self._notify_window.secondFolder):
-            for d in dirs:
-                src_dir = os.path.join(root, d)
-                dir_name = src_dir[second_len + 1:]
-                target_dir = os.path.join(self._notify_window.firstFolder, dir_name)
-                if not os.path.isdir(target_dir):
-                    try:
-                        os.makedirs(target_dir, exist_ok=True)
-                        self.new1dirs.append((src_dir, target_dir))
-                    except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error creating %s in %s\n" % (
-                                           dir_name, self._notify_window.secondFolder))
-                        if STOP_ON_ERROR:
-                            wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
+                    if number_of_files % 10 == 0:
+                        if self._want_abort:
+                            wx.PostEvent(self._notify_window, ResultEvent({'s': 1}))
                             return
+                        wx.PostEvent(self._notify_window,
+                                     ResultEvent({'s': 2,
+                                                  'n': number_of_files,
+                                                  'f': os.path.join(root, f)}))
 
-            for f in files:
-                file_dir = root[second_len + 1:]
-                src_file = os.path.join(root, f)
-                # skip those copied from 1st to 2nd and those already compared
-                dest_file = os.path.join(self._notify_window.firstFolder, file_dir, f)
-                if not os.path.isfile(dest_file):
-                    try:
-                        fsize = os.path.getsize(src_file)
-                    except OSError:
-                        continue
-                    if fsize > 100000000:
-                        # for size > 100MB, report it's being copied
-                        wx.PostEvent(self._notify_window, ResultEvent({'s': 2,
-                                                                       'n': number_of_files,
-                                                                       'f': src_file}))
-                    try:
-                        shutil.copy2(src_file, dest_file)
-                        number_of_files += 1
-                    except (PermissionError, FileNotFoundError):
-                        self.logFile.write("Error copy %s to %s\n" % (src_file, dest_file))
+            for f in self.same_name_diff_stats:
+                src_file = os.path.join(self._notify_window.secondFolder, f)
+                dest_file = os.path.join(self._notify_window.firstFolder, f)
+                try:
+                    # save filename in folder 2 as filename.2 in folder 1
+                    shutil.copy2(src_file, "%s.2" % dest_file)
+                    number_of_files += 1
+                except (PermissionError, FileNotFoundError):
+                    self.logFile.write("Error copy %s to %s.2\n" % (src_file, dest_file))
+                    if STOP_ON_ERROR:
                         wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
                         return
 
-                if number_of_files % 10 == 0:
-                    if self._want_abort:
-                        wx.PostEvent(self._notify_window, ResultEvent({'s': 1}))
-                        return
-                    wx.PostEvent(self._notify_window,
-                                 ResultEvent({'s': 2,
-                                              'n': number_of_files,
-                                              'f': os.path.join(root, f)}))
-
-        for f in self.same_name_diff_stats:
-            src_file = os.path.join(self._notify_window.secondFolder, f)
-            dest_file = os.path.join(self._notify_window.firstFolder, f)
-            try:
-                # save filename in folder 2 as filename.2 in folder 1
-                shutil.copy2(src_file, "%s.2" % dest_file)
                 number_of_files += 1
-            except (PermissionError, FileNotFoundError):
-                self.logFile.write("Error copy %s to %s.2\n" % (src_file, dest_file))
-                if STOP_ON_ERROR:
-                    wx.PostEvent(self._notify_window, ResultEvent({'s': 0}))
-                    return
 
-            number_of_files += 1
-
-        for pair in self.new1dirs:
-            shutil.copystat(pair[0], pair[1])
+            for pair in self.new1dirs:
+                shutil.copystat(pair[0], pair[1])
 
         self.logFile.close()
         wx.PostEvent(self._notify_window, ResultEvent({'n': number_of_files, 's': 3}))
